@@ -1,5 +1,5 @@
 [package]
-name = "tg-join-leave-bot"
+name = "minuteman"
 version = "0.1.0"
 edition = "2021"
 
@@ -15,3 +15,5 @@ rocksdb = { version = "0.18.0", features = ["multi-threaded-cf"] }
 serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 tokio = { version = "1.17.0", features = [ "macros", "rt", "rt-multi-thread" ] }
+tracing-subscriber = "0.3.11"
+warp = "0.3.2"
