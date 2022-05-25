@@ -145,7 +145,7 @@ async fn get_files(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct UserMeta {
+pub struct UserMeta {
     pub id: String,
     pub first_name: String,
     pub last_name: Option<String>,
@@ -154,7 +154,7 @@ struct UserMeta {
     pub language_code: Option<String>,
 }
 
-enum FileEntryType {
+pub enum FileEntryType {
     Chat,
     VideoThumb,
     User,
@@ -278,7 +278,7 @@ async fn process_user(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItemMediaType {
+pub enum LogItemMediaType {
     Image {
         width: i64,
         height: i64,
@@ -316,29 +316,29 @@ enum LogItemMediaType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItemMembershipType {
+pub enum LogItemMembershipType {
     Left,
     Joined,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-struct LogItemSpecialTypeLocation {
-    longitude: f32,
-    latitude: f32,
+pub struct LogItemSpecialTypeLocation {
+    pub longitude: f32,
+    pub latitude: f32,
 }
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-struct LogItemSpecialTypePollOption {
-    text: String,
-    voter_count: i64,
+pub struct LogItemSpecialTypePollOption {
+    pub text: String,
+    pub voter_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItemMessageEntityKind {
+pub enum LogItemMessageEntityKind {
     Mention,
     Hashtag,
     BotCommand,
@@ -356,15 +356,15 @@ enum LogItemMessageEntityKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-struct LogItemSpecialTypePollMessageEntity {
-    offset: i64,
-    length: i64,
-    kind: LogItemMessageEntityKind,
+pub struct LogItemSpecialTypePollMessageEntity {
+    pub offset: i64,
+    pub length: i64,
+    pub kind: LogItemMessageEntityKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItemSpecialType {
+pub enum LogItemSpecialType {
     Contact {
         user_id: Option<i64>,
         phone_number: String,
@@ -401,7 +401,7 @@ enum LogItemSpecialType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItemChatType {
+pub enum LogItemChatType {
     NewTitle {
         title: String,
     },
@@ -412,15 +412,15 @@ enum LogItemChatType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct LogItemMessageEntity {
-    offset: i64,
-    length: i64,
-    kind: LogItemMessageEntityKind,
+pub struct LogItemMessageEntity {
+    pub offset: i64,
+    pub length: i64,
+    pub kind: LogItemMessageEntityKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LogItem {
+pub enum LogItem {
     Message {
         user_id: String,
         time: i64,
@@ -1016,7 +1016,7 @@ async fn handle_message(
 
     let chat_key =
         format!(
-            "chat:{}",
+            "chat_rel:{}",
             message.chat.id().to_string(),
         );
 
@@ -1051,13 +1051,14 @@ async fn handle_message(
 async fn run(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut db = db.lock().unwrap();
-
     let api = Api::new(get_telegram_api_token());
 
     let mut stream = api.stream();
 
     while let Some(update) = stream.next().await {
+        let db = db.clone();
+        let mut db = db.lock().unwrap();
+
         let update = update?;
 
         if let UpdateKind::Message(message) = update.kind {

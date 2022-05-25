@@ -18,6 +18,8 @@ mod workers;
 mod utils;
 mod renderer;
 
+const GLOBAL_CSS: &str = include_str!("./assets/global.css");
+
 const MAX_FILE_SIZE: i64 = 1024 * 1024 * 50; // 50 MB
 
 static JOB_SLEEP_INTERVAL: u64 = 2_000u64;
@@ -39,6 +41,17 @@ macro_rules! some_or_return {
         }
     };
 }
+
+#[derive(Debug)]
+enum MinutemanError {
+    LockError(String),
+    DBError(String),
+    TelegramError(String),
+    ParseError(String),
+    Other(String),
+}
+
+impl warp::reject::Reject for MinutemanError {}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().pretty().init();

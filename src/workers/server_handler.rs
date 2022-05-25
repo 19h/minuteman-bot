@@ -16,24 +16,29 @@ fn with_db(
 async fn run(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let default = warp::path::end()
-        .map(|| {
-            warp::reply::html(
-                "yo",
-            )
-        });
-
-    let chats =
-        warp::path("chats")
+    let default =
+        warp::path::end()
             .and(with_db(db.clone()))
             .and_then(renderer::chats::chats);
+
+    let chat_index =
+        warp::path("chat")
+            .and(with_db(db.clone()))
+            .and(warp::path::param())
+            .and_then(renderer::chat_index::chat_index);
+
+    let chat_listing =
+        warp::path("chat")
+            .and(with_db(db.clone()))
+            .and(warp::path::param())
+            .and(warp::path::param())
+            .and_then(renderer::chat_listing::chat_listing);
 
     let routes =
         warp::get()
             .and(default)
-            .or(
-                chats
-            );
+            .or(chat_listing)
+            .or(chat_index);
 
     println!("Ain't gonna need to tell the truth, tell no lies");
     println!("Everything you think, do, and say");
