@@ -14,44 +14,16 @@ use rocksdb::{DBAccess, DBWithThreadMode, MultiThreaded, SingleThreaded, ThreadM
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
-mod workers;
-mod utils;
-mod renderer;
+pub mod workers;
+pub mod utils;
+pub mod renderer;
+pub mod prelude;
 
-const GLOBAL_CSS: &str = include_str!("./assets/global.css");
-
-const MAX_FILE_SIZE: i64 = 1024 * 1024 * 50; // 50 MB
-
-static JOB_SLEEP_INTERVAL: u64 = 2_000u64;
-
-const TELEGRAM_API_TOKEN: &str = "";
-
-#[inline(always)]
-fn get_telegram_api_token() -> String {
-    env::var("TELEGRAM_API_TOKEN")
-        .unwrap_or_else(|_| TELEGRAM_API_TOKEN.to_string())
-}
-
-#[macro_export]
-macro_rules! some_or_return {
-    ( $x:expr $(,)? ) => {
-        match $x {
-            Some(x) => x,
-            None => return,
-        }
-    };
-}
-
-#[derive(Debug)]
-enum MinutemanError {
-    LockError(String),
-    DBError(String),
-    TelegramError(String),
-    ParseError(String),
-    Other(String),
-}
-
-impl warp::reject::Reject for MinutemanError {}
+pub use prelude::GLOBAL_CSS;
+pub use prelude::MAX_FILE_SIZE;
+pub use prelude::JOB_SLEEP_INTERVAL;
+pub use prelude::get_telegram_api_token;
+pub use prelude::MinutemanError;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().pretty().init();

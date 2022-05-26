@@ -1,7 +1,9 @@
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
+
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
+
 use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue};
 use crate::workers::telegram_handler::LogItem;
 
@@ -166,7 +168,7 @@ pub async fn chat_listing(
                     )
                 );
             },
-            LogItem::Media { ref files, ref user_id, .. } => {
+            LogItem::Media { ref files, ref user_id, ref caption, .. } if caption.is_some() => {
                 out.push(
                     format!(
                         "<tr class=\"message\">\
@@ -178,7 +180,7 @@ pub async fn chat_listing(
                         </tr>",
                         day,
                         user_id,
-                        text,
+                        caption.as_ref().unwrap().clone(),
                     )
                 );
             },

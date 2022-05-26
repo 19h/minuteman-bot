@@ -61,6 +61,16 @@ macro_rules! ok_or_return {
 }
 
 #[macro_export]
+macro_rules! some_or_return {
+    ( $x:expr $(,)? ) => {
+        match $x {
+            Some(x) => x,
+            None => return,
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! respawning_threaded_async {
     ( $x:expr, $online_msg:expr, $offline_msg:expr ) => {
         thread::spawn(

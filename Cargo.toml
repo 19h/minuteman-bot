@@ -3,8 +3,12 @@ name = "minuteman"
 version = "0.1.0"
 edition = "2021"
 
-description = "Removes join and leave messages in Telegram groups."
+description = "foo foooo fooo foooooo"
 license = "MIT"
+
+[[example]]
+name = "users"
+path = "examples/minuteman.rs"
 
 [dependencies]
 chrono = "0.4.19"

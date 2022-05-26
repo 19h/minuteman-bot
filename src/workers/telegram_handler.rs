@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{get_telegram_api_token, JOB_SLEEP_INTERVAL, MAX_FILE_SIZE, ok_or_continue, ok_or_return_none, some_or_return_none};
 
-fn build_file_url(
+pub fn build_file_url(
     token: &str,
     file_path: &str,
 ) -> String {
@@ -20,7 +20,7 @@ fn build_file_url(
     )
 }
 
-async fn get_file(
+pub async fn get_file(
     token: &str,
     file_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -38,7 +38,7 @@ async fn get_file(
     Ok(buffer)
 }
 
-async fn get_file_path(
+pub async fn get_file_path(
     api: &Api,
     file: &impl ToFileRef,
 ) -> Option<String> {
@@ -55,7 +55,7 @@ async fn get_file_path(
     )
 }
 
-async fn extract_file_paths(
+pub async fn extract_file_paths(
     api: &Api,
     message: &Message,
 ) -> Vec<(String, String)> {
@@ -121,7 +121,7 @@ async fn extract_file_paths(
     file_refs
 }
 
-async fn get_files(
+pub async fn get_files(
     api: &Api,
     message: &Message,
 ) -> Vec<(String, Vec<u8>)> {
@@ -160,7 +160,7 @@ pub enum FileEntryType {
     User,
 }
 
-fn build_file_key(
+pub fn build_file_key(
     file_entry_type: FileEntryType,
     file_id: &str,
 ) -> String {
@@ -171,7 +171,7 @@ fn build_file_key(
     }
 }
 
-fn find_biggest_photo(
+pub fn find_biggest_photo(
     photos: &Vec<PhotoSize>,
 ) -> PhotoSize {
     let mut photo: Option<&PhotoSize> = None;
@@ -195,8 +195,8 @@ fn find_biggest_photo(
     photo.unwrap().clone()
 }
 
-async fn process_user_profile_picture(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn process_user_profile_picture(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     user: &User,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -226,6 +226,8 @@ async fn process_user_profile_picture(
 
             // check image integrity
             if image::load_from_memory(&file).is_ok() {
+                let db = db.lock().unwrap();
+
                 db.put(
                     build_file_key(
                         FileEntryType::User,
@@ -240,11 +242,11 @@ async fn process_user_profile_picture(
     Ok(())
 }
 
-async fn process_user_meta(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn process_user_meta(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     user: &User,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<UserMeta, Box<dyn std::error::Error>> {
     let user = user.clone();
 
     let user_meta =
@@ -257,21 +259,23 @@ async fn process_user_meta(
             language_code: user.language_code,
         };
 
+    let db = db.lock().unwrap();
+
     db.put(
-        user.id.to_string(),
+        format!("user:meta:{}", user.id),
         &serde_json::to_string(&user_meta)?,
     )?;
 
-    Ok(())
+    Ok(user_meta)
 }
 
-async fn process_user(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn process_user(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     user: &User,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    dbg!(process_user_profile_picture(db, api, user).await);
-    dbg!(process_user_meta(db, api, user).await);
+    dbg!(process_user_profile_picture(db.clone(), api, user).await);
+    dbg!(process_user_meta(db.clone(), api, user).await);
 
     Ok(())
 }
@@ -463,7 +467,7 @@ pub enum LogItem {
 }
 
 async fn process_files(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     message: &Message,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
@@ -474,6 +478,8 @@ async fn process_files(
         ).await;
 
     for (file_id, file) in file_refs.iter() {
+        let db = db.lock().unwrap();
+
         db.put(
             build_file_key(
                 FileEntryType::Chat,
@@ -493,8 +499,8 @@ async fn process_files(
     )
 }
 
-async fn process_photosize(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn process_photosize(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     photo_size: &PhotoSize,
     file_id: Option<&str>,
@@ -511,6 +517,8 @@ async fn process_photosize(
 
         // check image integrity
         if image::load_from_memory(&file).is_ok() {
+            let db = db.lock().unwrap();
+
             db.put(
                 build_file_key(
                     FileEntryType::VideoThumb,
@@ -533,7 +541,7 @@ async fn process_photosize(
     }
 }
 
-fn map_entity_kind(
+pub fn map_entity_kind(
     kind: &MessageEntityKind,
 ) -> LogItemMessageEntityKind {
     match kind {
@@ -564,8 +572,8 @@ fn map_entity_kind(
     }
 }
 
-async fn build_log_item(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn build_log_item(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     message: &Message,
     files: &Vec<String>,
@@ -675,7 +683,7 @@ async fn build_log_item(
                 match data.thumb {
                     Some(ref thumb) => {
                         process_photosize(
-                            db,
+                            db.clone(),
                             &api,
                             thumb,
                             None,
@@ -723,7 +731,7 @@ async fn build_log_item(
                 match data.thumb {
                     Some(ref thumb) => {
                         process_photosize(
-                            db,
+                            db.clone(),
                             &api,
                             thumb,
                             None,
@@ -882,7 +890,7 @@ async fn build_log_item(
 
             let photo =
                 process_photosize(
-                    db,
+                    db.clone(),
                     api,
                     &photo_size,
                     None,
@@ -968,19 +976,21 @@ async fn build_log_item(
     }
 }
 
-async fn handle_message(
-    db: &mut DBWithThreadMode<MultiThreaded>,
+pub async fn handle_message(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     message: &Message,
     files: &Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let log_item =
         build_log_item(
-            db,
+            db.clone(),
             api,
             message,
             files,
         ).await;
+
+    let db = db.lock().unwrap();
 
     // actual message
 
@@ -1004,7 +1014,7 @@ async fn handle_message(
         format!(
             "chat_index:{}:{}",
             message.chat.id().to_string(),
-            (message.date / 86400000).to_string(),
+            (message.date / 86400).to_string(),
         );
 
     db.put(
@@ -1057,7 +1067,6 @@ async fn run(
 
     while let Some(update) = stream.next().await {
         let db = db.clone();
-        let mut db = db.lock().unwrap();
 
         let update = update?;
 
@@ -1070,16 +1079,26 @@ async fn run(
                 | MessageKind::Sticker { .. }
                 | MessageKind::Video { .. }
                 | MessageKind::VideoNote { .. } =>
-                    process_files(&mut db, &api, &message).await?,
+                    process_files(
+                        db.clone(),
+                        &api,
+                        &message,
+                    ).await?,
 
                 _ => Vec::new(),
             };
 
             handle_message(
-                &mut db,
+                db.clone(),
                 &api,
                 &message,
                 &files,
+            ).await?;
+
+            process_user(
+                db.clone(),
+                &api,
+                &message.from,
             ).await?;
         }
     }
