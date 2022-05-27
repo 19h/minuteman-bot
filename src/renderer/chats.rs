@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 use crate::{GLOBAL_CSS, MinutemanError};
+use crate::utils::resolve_chat_name;
 
 pub async fn chats(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
@@ -42,19 +43,23 @@ pub async fn chats(
         let key = String::from_utf8(key).unwrap();
         let key = key.split(":").collect::<Vec<&str>>();
 
-        dbg!(&key);
-
         if key.len() != 2 {
             continue;
         }
 
         let key = key[key.len() - 1];
 
+        let chat_name =
+            resolve_chat_name(
+                &dbi,
+                &key,
+            );
+
         out.push(
             format!(
                 "<li><a href=\"/chat/{}/latest\">{}</a> (<a href=\"/chat/{}\">index</a> | <a href=\"/chat/{}/latest\">latest</a>)</li>",
                 &key,
-                &key,
+                &chat_name,
                 &key,
                 &key,
             ),

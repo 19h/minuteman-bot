@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
-use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue, some_or_continue};
+use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue, ok_or_return, ok_or_return_none, some_or_continue};
+use crate::utils::resolve_chat_name;
 use crate::workers::telegram_handler::{LogItem, UserMeta};
 
 pub async fn chat_listing(
@@ -12,14 +13,6 @@ pub async fn chat_listing(
     chat_id: String,
     date: String,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    if date == "latest" {
-        return Ok(
-            warp::reply::html(
-                "not implemented".to_string(),
-            )
-        );
-    }
-
     let dbi =
         db.lock()
             .map_err(|err|
@@ -29,6 +22,65 @@ pub async fn chat_listing(
                     ),
                 )
             )?;
+
+    let date = {
+        if date == "latest" {
+            let mut opts = ReadOptions::default();
+
+            let lower_bound = format!("chat_index:{}:", &chat_id).as_bytes().to_vec();
+            let upper_bound = format!("chat_index:{}:\x7f", &chat_id).as_bytes().to_vec();
+
+            opts.set_iterate_upper_bound(upper_bound.clone());
+            opts.set_iterate_lower_bound(lower_bound.clone());
+
+            let mut iter =
+                dbi.iterator_opt(
+                    IteratorMode::From(&upper_bound, Direction::Reverse),
+                    opts,
+                );
+
+            match iter.next()
+                .map(|(k, v)| String::from_utf8(k.to_vec()).ok())
+                .flatten()
+                .map(|key|
+                    key
+                        .split(':')
+                        .last()
+                        .map(|s|
+                            s
+                                .to_string()
+                                .clone()
+                        )
+                )
+                .flatten()
+                .map(|day| {
+                    let day = ok_or_return_none!(day.parse::<i64>()) * 86_400;
+                    let day = NaiveDateTime::from_timestamp(day, 0);
+                    let day: DateTime<Utc> = DateTime::from_utc(day, Utc);
+
+                    Some(day.format("%Y-%m-%d"))
+                })
+                .flatten() {
+                Some(day) => day.to_string(),
+                None =>
+                    return Ok(
+                        warp::reply::html(
+                            format!(
+                                "<!DOCTYPE html><html lang=\"en\">{}<body><div class=\"navigation\"><span class=\"title\">{}</span> | <span class=\"nolink\">index</span> | <a href=\"/chat/{}/latest\">latest</a></div>",
+                                GLOBAL_CSS,
+                                resolve_chat_name(
+                                    &dbi,
+                                    &chat_id,
+                                ),
+                                chat_id,
+                            ),
+                        ),
+                    ),
+            }
+        } else {
+            date
+        }
+    };
 
     let mut out =
         vec!(

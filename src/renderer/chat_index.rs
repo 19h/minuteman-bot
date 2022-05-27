@@ -1,7 +1,11 @@
 use std::sync::{Arc, Mutex};
+
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
+
 use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue};
+use crate::utils::resolve_chat_name;
+use crate::workers::telegram_handler::ChatMeta;
 
 pub async fn chat_index(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
@@ -39,10 +43,16 @@ pub async fn chat_index(
             opts,
         );
 
+    let chat_name =
+        resolve_chat_name(
+            &dbi,
+            &chat_id,
+        );
+
     out.push(
         format!(
             "<div class=\"navigation\"><span class=\"title\">{}</span> | <span class=\"nolink\">index</span> | <a href=\"/chat/{}/latest\">latest</a></div>",
-            &chat_id,
+            &chat_name,
             &chat_id,
         ),
     );
@@ -68,7 +78,7 @@ pub async fn chat_index(
         out.push(
             format!(
                 "<li><a href=\"/chat/{}/{}\">{}</a>{}</li>",
-                &chat_id,
+                &chat_name,
                 &day,
                 &day,
                 if i == 0 {

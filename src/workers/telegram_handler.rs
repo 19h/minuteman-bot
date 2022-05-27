@@ -188,6 +188,129 @@ impl UserMeta {
     }
 }
 
+impl From<User> for UserMeta {
+    fn from(user: User) -> Self {
+        Self {
+            id: user.id.to_string(),
+            first_name: user.first_name,
+            last_name: user.last_name,
+            username: user.username,
+            is_bot: user.is_bot,
+            language_code: user.language_code
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupMeta {
+    pub id: String,
+    pub title: String,
+    pub all_members_are_administrators: bool,
+    pub invite_link: Option<String>,
+}
+
+impl From<Group> for GroupMeta {
+    fn from(group: Group) -> Self {
+        Self {
+            id: group.id.to_string(),
+            title: group.title,
+            all_members_are_administrators: group.all_members_are_administrators,
+            invite_link: group.invite_link
+        }
+    }
+}
+
+impl From<&Group> for GroupMeta {
+    fn from(group: &Group) -> Self {
+        group.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuperGroupMeta {
+    pub id: String,
+    pub title: String,
+    pub username: Option<String>,
+    pub invite_link: Option<String>,
+}
+
+impl From<Supergroup> for SuperGroupMeta {
+    fn from(group: Supergroup) -> Self {
+        Self {
+            id: group.id.to_string(),
+            title: group.title,
+            username: group.username,
+            invite_link: group.invite_link
+        }
+    }
+}
+
+impl From<&Supergroup> for SuperGroupMeta {
+    fn from(group: &Supergroup) -> Self {
+        group.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawChatMeta {
+    pub id: String,
+    pub chat_type: String,
+    pub title: Option<String>,
+    pub username: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub invite_link: Option<String>,
+    pub language_code: Option<String>,
+    pub all_members_are_administrators: Option<bool>,
+}
+
+impl From<RawChat> for RawChatMeta {
+    fn from(raw_chat: RawChat) -> Self {
+        Self {
+            id: raw_chat.id.to_string(),
+            chat_type: raw_chat.type_,
+            title: raw_chat.title,
+            username: raw_chat.username,
+            first_name: raw_chat.first_name,
+            last_name: raw_chat.last_name,
+            invite_link: raw_chat.invite_link,
+            language_code: raw_chat.language_code,
+            all_members_are_administrators: raw_chat.all_members_are_administrators,
+        }
+    }
+}
+
+impl From<&RawChat> for RawChatMeta {
+    fn from(chat: &RawChat) -> Self {
+        chat.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChatMeta {
+    User(UserMeta),
+    Group(GroupMeta),
+    SuperGroup(SuperGroupMeta),
+    Unknown(RawChatMeta),
+}
+
+impl From<MessageChat> for ChatMeta {
+    fn from(chat: MessageChat) -> Self {
+        match chat {
+            MessageChat::Private(user) => ChatMeta::User(user.into()),
+            MessageChat::Group(group) => ChatMeta::Group(group.into()),
+            MessageChat::Supergroup(group) => ChatMeta::SuperGroup(group.into()),
+            MessageChat::Unknown(raw_chat) => ChatMeta::Unknown(raw_chat.into()),
+        }
+    }
+}
+
+impl From<&MessageChat> for ChatMeta {
+    fn from(chat: &MessageChat) -> Self {
+        chat.clone().into()
+    }
+}
+
 pub enum FileEntryType {
     Chat,
     VideoThumb,
@@ -306,8 +429,8 @@ pub async fn process_user(
     api: &Api,
     user: &User,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    dbg!(process_user_profile_picture(db.clone(), api, user).await);
-    dbg!(process_user_meta(db.clone(), user).await);
+    process_user_profile_picture(db.clone(), api, user).await;
+    process_user_meta(db.clone(), user).await;
 
     Ok(())
 }
@@ -1023,8 +1146,6 @@ pub async fn handle_message(
 
     let db = db.lock().unwrap();
 
-    // actual message
-
     let established_date =
         message
             .forward
@@ -1038,66 +1159,95 @@ pub async fn handle_message(
                     .date,
             );
 
-    let message_key =
-        format!(
-            "chat:{}:{}",
-            message.chat.id().to_string(),
-            established_date.to_string(),
-        );
+    // store actual message
 
-    let message_value = serde_json::to_string(&log_item)?;
+    {
+        let message_key =
+            format!(
+                "chat:{}:{}",
+                message.chat.id().to_string(),
+                established_date.to_string(),
+            );
 
-    db.put(
-        &message_key,
-        &message_value,
-    )?;
+        let message_value = serde_json::to_string(&log_item)?;
 
-    dbg!(&message_key, &message_value);
+        db.put(
+            &message_key,
+            &message_value,
+        )?;
+    }
 
-    let chat_index_key =
-        format!(
-            "chat_index:{}:{}",
-            message.chat.id().to_string(),
-            (established_date / 86400).to_string(),
-        );
+    // store chat index (days since start of epoch)
 
-    db.put(
-        &chat_index_key,
-        &b"\0",
-    )?;
+    {
+        let chat_index_key =
+            format!(
+                "chat_index:{}:{}",
+                message.chat.id().to_string(),
+                (established_date / 86400).to_string(),
+            );
 
-    dbg!(&chat_index_key);
+        db.put(
+            &chat_index_key,
+            &b"\0",
+        )?;
+    }
 
-    let chat_key =
-        format!(
-            "chat_rel:{}",
-            message.chat.id().to_string(),
-        );
+    // store chat so that it can be iterated upon
 
-    db.put(
-        &chat_key,
-        &b"\0",
-    )?;
+    {
+        let chat_key =
+            format!(
+                "chat_rel:{}",
+                message.chat.id().to_string(),
+            );
 
-    dbg!(&chat_key);
+        db.put(
+            &chat_key,
+            &b"\0",
+        )?;
+    }
 
-    // message-id ref entry
+    // store chat by message id so that it allows direct lookup
 
-    let message_ref_key =
-        format!(
-            "chat_ref:{}:{}",
-            message.chat.id().to_string(),
-            message.id.to_string(),
-        );
+    {
+        let message_ref_key =
+            format!(
+                "chat_ref:{}:{}",
+                message.chat.id().to_string(),
+                message.id.to_string(),
+            );
 
-    let message_ref_value = established_date.to_string();
+        let message_ref_value = established_date.to_string();
 
-    db.put(
-        &message_ref_key,
-        &message_ref_value,
-    )?;
+        db.put(
+            &message_ref_key,
+            &message_ref_value,
+        )?;
+    }
 
-    dbg!(&message_ref_key, &message_ref_value);
+    // store chat metadata
+
+    {
+        let chat_meta_key =
+            format!(
+                "chat:meta:{}",
+                message.chat.id().to_string(),
+            );
+
+        let chat_meta: ChatMeta =
+            (&message.chat).into();
+
+        let chat_meta_value =
+            serde_json::to_string(
+                &chat_meta,
+            )?;
+
+        db.put(
+            &chat_meta_key,
+            &chat_meta_value,
+        )?;
+    }
 
     Ok(())
 }

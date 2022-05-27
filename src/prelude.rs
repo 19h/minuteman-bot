@@ -18,6 +18,7 @@ pub enum MinutemanError {
     DBError(String),
     TelegramError(String),
     ParseError(String),
+    Utf8Error(String),
     Other(String),
 }
 
