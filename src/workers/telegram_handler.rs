@@ -40,17 +40,15 @@ pub async fn get_file_path(
     api: &Api,
     file: &impl ToFileRef,
 ) -> Option<String> {
-    Some(
-        some_or_return_none!(
-            ok_or_return_none!(
-                api.send(
-                    pw_telegram_bot_fork::requests::GetFile::new(
-                        file,
-                    ),
-                ).await,
-            ).file_path
+    api.send(
+        GetFile::new(
+            file,
         ),
     )
+        .await
+        .ok()
+        .map(|file| file.file_path)
+        .flatten()
 }
 
 pub async fn extract_file_paths(
