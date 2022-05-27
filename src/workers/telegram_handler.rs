@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::{get_telegram_api_token, JOB_SLEEP_INTERVAL, MAX_FILE_SIZE, ok_or_continue, ok_or_return_none, some_or_return_none};
 
 pub fn build_file_url(
-    token: &str,
     file_path: &str,
 ) -> String {
     format!(
@@ -21,10 +20,9 @@ pub fn build_file_url(
 }
 
 pub async fn get_file(
-    token: &str,
     file_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let url = build_file_url(token, file_path);
+    let url = build_file_url(file_path);
     let mut response = reqwest::get(&url).await?;
 
     let mut out = response.bytes_stream();
@@ -133,7 +131,6 @@ pub async fn get_files(
                 file_id,
                 ok_or_continue!(
                     get_file(
-                        &get_telegram_api_token(),
                         &file_path,
                     ).await
                 ),
@@ -152,6 +149,43 @@ pub struct UserMeta {
     pub username: Option<String>,
     pub is_bot: bool,
     pub language_code: Option<String>,
+}
+
+impl Default for UserMeta {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            first_name: String::new(),
+            last_name: None,
+            username: None,
+            is_bot: false,
+            language_code: None,
+        }
+    }
+}
+
+impl UserMeta {
+    pub fn with_id(
+        self,
+        user_id: &str,
+    ) -> Self {
+        let mut meta = self;
+
+        meta.id = user_id.to_string().clone();
+
+        meta
+    }
+
+    pub fn with_username(
+        self,
+        username: &str,
+    ) -> Self {
+        let mut meta = self;
+
+        meta.username = Some(username.to_string().clone());
+
+        meta
+    }
 }
 
 pub enum FileEntryType {
@@ -220,7 +254,6 @@ pub async fn process_user_profile_picture(
         if let Some(file_path) = get_file_path(&api, &photo).await {
             let file =
                 get_file(
-                    &get_telegram_api_token(),
                     &file_path,
                 ).await?;
 
@@ -244,7 +277,6 @@ pub async fn process_user_profile_picture(
 
 pub async fn process_user_meta(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
-    api: &Api,
     user: &User,
 ) -> Result<UserMeta, Box<dyn std::error::Error>> {
     let user = user.clone();
@@ -275,7 +307,7 @@ pub async fn process_user(
     user: &User,
 ) -> Result<(), Box<dyn std::error::Error>> {
     dbg!(process_user_profile_picture(db.clone(), api, user).await);
-    dbg!(process_user_meta(db.clone(), api, user).await);
+    dbg!(process_user_meta(db.clone(), user).await);
 
     Ok(())
 }
@@ -508,7 +540,6 @@ pub async fn process_photosize(
     if let Some(file_path) = get_file_path(&api, &photo_size).await {
         let file =
             match get_file(
-                &get_telegram_api_token(),
                 &file_path,
             ).await {
                 Ok(file) => file,
@@ -994,11 +1025,24 @@ pub async fn handle_message(
 
     // actual message
 
+    let established_date =
+        message
+            .forward
+            .as_ref()
+            .map(|original_message|
+                     original_message
+                         .date,
+            )
+            .unwrap_or(
+                message
+                    .date,
+            );
+
     let message_key =
         format!(
             "chat:{}:{}",
             message.chat.id().to_string(),
-            message.date.to_string(),
+            established_date.to_string(),
         );
 
     let message_value = serde_json::to_string(&log_item)?;
@@ -1014,7 +1058,7 @@ pub async fn handle_message(
         format!(
             "chat_index:{}:{}",
             message.chat.id().to_string(),
-            (message.date / 86400).to_string(),
+            (established_date / 86400).to_string(),
         );
 
     db.put(
@@ -1046,7 +1090,7 @@ pub async fn handle_message(
             message.id.to_string(),
         );
 
-    let message_ref_value = message.date.to_string();
+    let message_ref_value = established_date.to_string();
 
     db.put(
         &message_ref_key,

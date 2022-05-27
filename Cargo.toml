@@ -11,6 +11,7 @@ name = "users"
 path = "examples/minuteman.rs"
 
 [dependencies]
+base64 = "0.13.0"
 chrono = "0.4.19"
 futures = "0.3.21"
 image = "0.24.2"

@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
-use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue};
-use crate::workers::telegram_handler::LogItem;
+use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue, some_or_continue};
+use crate::workers::telegram_handler::{LogItem, UserMeta};
 
 pub async fn chat_listing(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
@@ -149,10 +149,36 @@ pub async fn chat_listing(
                 )
             );
 
-        dbg!(&msg);
-
         match msg {
             LogItem::Message { ref text, ref user_id, .. } => {
+                let user =
+                    dbi.get(
+                        format!("user:meta:{}", user_id).as_bytes(),
+                    )
+                        .ok()
+                        .flatten()
+                        .map(|val|
+                            serde_json::from_slice::<UserMeta>(
+                                &val
+                            )
+                            .ok()
+                        )
+                        .flatten()
+                        .unwrap_or(
+                            UserMeta::default()
+                                .with_id(
+                                    &user_id.clone(),
+                                )
+                                .with_username(
+                                    &user_id.clone(),
+                                ),
+                        );
+
+                let username =
+                    user.username
+                        .as_ref()
+                        .unwrap_or(&user_id);
+
                 out.push(
                     format!(
                         "<tr class=\"message\">\
@@ -163,12 +189,30 @@ pub async fn chat_listing(
                             <td class=\"content\">{}</td>\
                         </tr>",
                         day,
-                        user_id,
+                        &username,
                         text,
                     )
                 );
             },
             LogItem::Media { ref files, ref user_id, ref caption, .. } if caption.is_some() => {
+                dbg!(&files);
+
+                let file_uris =
+                    files
+                        .iter()
+                        .filter_map(
+                            |file|
+                                dbi.get(
+                                    format!("file:chat:{}", file).as_bytes(),
+                                )
+                                    .ok()
+                                    .flatten()
+                        )
+                        .map(|file| base64::encode(file))
+                        .map(|file| format!("data:image/jpeg;base64,{}", file))
+                        .map(|file| format!("<img src=\"{}\" style=\"max-height: 300px; max-width: 300px;\"/>", file))
+                        .collect::<Vec<String>>();
+
                 out.push(
                     format!(
                         "<tr class=\"message\">\
@@ -180,7 +224,11 @@ pub async fn chat_listing(
                         </tr>",
                         day,
                         user_id,
-                        caption.as_ref().unwrap().clone(),
+                        format!(
+                            "{} <br/> {}",
+                            caption.as_ref().unwrap().clone(),
+                            file_uris.join(" "),
+                        ),
                     )
                 );
             },
