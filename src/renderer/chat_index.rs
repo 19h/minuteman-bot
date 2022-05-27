@@ -34,12 +34,14 @@ pub async fn chat_index(
     let mut opts = ReadOptions::default();
 
     let lower_bound = format!("chat_index:{}:", &chat_id).as_bytes().to_vec();
+    let upper_bound = format!("chat_index:{}:\x7f", &chat_id).as_bytes().to_vec();
 
-    opts.set_iterate_upper_bound(format!("chat_index:{}:\x7f", &chat_id).as_bytes().to_vec());
+    opts.set_iterate_upper_bound(upper_bound.clone());
+    opts.set_iterate_lower_bound(lower_bound.clone());
 
     let mut iter =
         dbi.iterator_opt(
-            IteratorMode::From(&lower_bound, Direction::Forward),
+            IteratorMode::From(&upper_bound, Direction::Reverse),
             opts,
         );
 
@@ -78,7 +80,7 @@ pub async fn chat_index(
         out.push(
             format!(
                 "<li><a href=\"/chat/{}/{}\">{}</a>{}</li>",
-                &chat_name,
+                &chat_id,
                 &day,
                 &day,
                 if i == 0 {

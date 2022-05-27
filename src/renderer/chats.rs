@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
+
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
+
 use crate::{GLOBAL_CSS, MinutemanError};
 use crate::utils::resolve_chat_name;
 

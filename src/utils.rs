@@ -1,4 +1,5 @@
-use rocksdb::{DBWithThreadMode, MultiThreaded};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
 use crate::workers::telegram_handler::{ChatMeta, UserMeta};
 
@@ -284,4 +285,50 @@ pub fn resolve_chat_name(
         .unwrap_or_else(
             || resolve_user(&db, chat_id, true),
         )
+}
+
+pub fn find_latest_chat_day(
+    db: &DBWithThreadMode<MultiThreaded>,
+    chat_id: &str,
+) -> Option<String> {
+    let mut opts = ReadOptions::default();
+
+    let lower_bound = format!("chat_index:{}:", &chat_id).as_bytes().to_vec();
+    let upper_bound = format!("chat_index:{}:\x7f", &chat_id).as_bytes().to_vec();
+
+    opts.set_iterate_upper_bound(upper_bound.clone());
+    opts.set_iterate_lower_bound(lower_bound.clone());
+
+    let mut iter =
+        db.iterator_opt(
+            IteratorMode::From(&upper_bound, Direction::Reverse),
+            opts,
+        );
+
+    iter.next()
+        .map(|(k, v)| String::from_utf8(k.to_vec()).ok())
+        .flatten()
+        .map(|key|
+            key
+                .split(':')
+                .last()
+                .map(|s|
+                    s
+                        .to_string()
+                        .clone()
+                )
+        )
+        .flatten()
+        .map(|day| {
+            let day = ok_or_return_none!(day.parse::<i64>()) * 86_400;
+            let day = NaiveDateTime::from_timestamp(day, 0);
+            let day: DateTime<Utc> = DateTime::from_utc(day, Utc);
+
+            Some(
+                day
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            )
+        })
+        .flatten()
 }

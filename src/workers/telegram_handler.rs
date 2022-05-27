@@ -62,7 +62,7 @@ pub async fn extract_file_paths(
     match message.kind {
         MessageKind::Audio { ref data, .. } => {
             match data.file_size {
-                Some(x) if x <= MAX_FILE_SIZE => {},
+                Some(x) if x <= MAX_FILE_SIZE => {}
                 Some(x) if x > MAX_FILE_SIZE => return file_refs,
                 _ => return file_refs,
             }
@@ -78,7 +78,7 @@ pub async fn extract_file_paths(
         }
         MessageKind::Voice { ref data, .. } => {
             match data.file_size {
-                Some(x) if x <= MAX_FILE_SIZE => {},
+                Some(x) if x <= MAX_FILE_SIZE => {}
                 Some(x) if x > MAX_FILE_SIZE => return file_refs,
                 _ => return file_refs,
             }
@@ -95,7 +95,7 @@ pub async fn extract_file_paths(
         MessageKind::Photo { ref data, .. } => {
             for photo in data {
                 match photo.file_size {
-                    Some(x) if x <= MAX_FILE_SIZE => {},
+                    Some(x) if x <= MAX_FILE_SIZE => {}
                     Some(x) if x > MAX_FILE_SIZE => continue,
                     _ => continue,
                 }
@@ -196,7 +196,7 @@ impl From<User> for UserMeta {
             last_name: user.last_name,
             username: user.username,
             is_bot: user.is_bot,
-            language_code: user.language_code
+            language_code: user.language_code,
         }
     }
 }
@@ -215,7 +215,7 @@ impl From<Group> for GroupMeta {
             id: group.id.to_string(),
             title: group.title,
             all_members_are_administrators: group.all_members_are_administrators,
-            invite_link: group.invite_link
+            invite_link: group.invite_link,
         }
     }
 }
@@ -240,7 +240,7 @@ impl From<Supergroup> for SuperGroupMeta {
             id: group.id.to_string(),
             title: group.title,
             username: group.username,
-            invite_link: group.invite_link
+            invite_link: group.invite_link,
         }
     }
 }
@@ -754,7 +754,7 @@ pub async fn build_log_item(
                     )
                     .collect(),
             };
-        },
+        }
 
         MessageKind::Audio { ref data } => {
             return LogItem::Media {
@@ -770,7 +770,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Document {
             ref data,
@@ -787,7 +787,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Photo {
             ref data,
@@ -810,7 +810,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Sticker {
             ref data,
@@ -826,7 +826,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Video {
             ref data,
@@ -842,7 +842,7 @@ pub async fn build_log_item(
                             thumb,
                             None,
                         ).await
-                    },
+                    }
                     _ => None,
                 };
 
@@ -860,7 +860,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Voice {
             ref data,
@@ -876,7 +876,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::VideoNote {
             ref data,
@@ -890,7 +890,7 @@ pub async fn build_log_item(
                             thumb,
                             None,
                         ).await
-                    },
+                    }
                     _ => None,
                 };
 
@@ -905,7 +905,7 @@ pub async fn build_log_item(
                 },
                 files: files.clone(),
             };
-        },
+        }
 
         MessageKind::Contact {
             ref data,
@@ -921,7 +921,7 @@ pub async fn build_log_item(
                     last_name: data.last_name.clone(),
                 },
             };
-        },
+        }
 
         MessageKind::Location {
             ref data,
@@ -935,7 +935,7 @@ pub async fn build_log_item(
                     longitude: data.longitude,
                 },
             };
-        },
+        }
 
         MessageKind::Poll {
             ref data,
@@ -983,7 +983,7 @@ pub async fn build_log_item(
                     close_date: data.close_date.clone(),
                 },
             };
-        },
+        }
 
         MessageKind::Venue {
             ref data,
@@ -1003,7 +1003,7 @@ pub async fn build_log_item(
                     foursquare_id: data.foursquare_id.clone(),
                 },
             };
-        },
+        }
 
         MessageKind::NewChatMembers { .. } => {
             return LogItem::Membership {
@@ -1011,7 +1011,7 @@ pub async fn build_log_item(
                 time: message.date,
                 membership_type: LogItemMembershipType::Joined,
             };
-        },
+        }
 
         MessageKind::LeftChatMember { .. } => {
             return LogItem::Membership {
@@ -1019,7 +1019,7 @@ pub async fn build_log_item(
                 time: message.date,
                 membership_type: LogItemMembershipType::Left,
             };
-        },
+        }
 
         MessageKind::NewChatTitle {
             ref data,
@@ -1032,7 +1032,7 @@ pub async fn build_log_item(
                     title: data.clone(),
                 },
             };
-        },
+        }
 
         MessageKind::NewChatPhoto {
             ref data,
@@ -1058,7 +1058,7 @@ pub async fn build_log_item(
                     file_id: photo.as_ref().map(|p| p.clone()),
                 },
             };
-        },
+        }
 
         MessageKind::DeleteChatPhoto => {
             return LogItem::Chat {
@@ -1066,7 +1066,7 @@ pub async fn build_log_item(
                 time: message.date,
                 chat_type: LogItemChatType::DeletePhoto,
             };
-        },
+        }
 
         MessageKind::PinnedMessage {
             ref data,
@@ -1077,14 +1077,14 @@ pub async fn build_log_item(
                 message: data.text(),
                 message_id: data.to_message_id().to_string(),
             };
-        },
+        }
         MessageKind::GroupChatCreated => {
             return LogItem::Unimplemented(
                 "GroupChatCreated".to_string(),
                 message.from.id.to_string().clone(),
                 message.date,
             );
-        },
+        }
 
         MessageKind::SupergroupChatCreated => {
             return LogItem::Unimplemented(
@@ -1092,7 +1092,7 @@ pub async fn build_log_item(
                 message.from.id.to_string().clone(),
                 message.date,
             );
-        },
+        }
 
         MessageKind::ChannelChatCreated => {
             return LogItem::Unimplemented(
@@ -1100,7 +1100,7 @@ pub async fn build_log_item(
                 message.from.id.to_string().clone(),
                 message.date,
             );
-        },
+        }
 
         MessageKind::MigrateToChatId { .. } => {
             return LogItem::Unimplemented(
@@ -1108,7 +1108,7 @@ pub async fn build_log_item(
                 message.from.id.to_string().clone(),
                 message.date,
             );
-        },
+        }
 
         MessageKind::MigrateFromChatId { .. } => {
             return LogItem::Unimplemented(
@@ -1116,7 +1116,7 @@ pub async fn build_log_item(
                 message.from.id.to_string().clone(),
                 message.date,
             );
-        },
+        }
 
         MessageKind::Unknown { .. } => {
             dbg!(&message);

@@ -34,9 +34,17 @@ async fn run(
             .and(warp::path::param())
             .and_then(renderer::chat_listing::chat_listing);
 
+    let get_file =
+        warp::path("file")
+            .and(with_db(db.clone()))
+            .and(warp::path::param())
+            .and(warp::path::param())
+            .and_then(renderer::get_file::get_file);
+
     let routes =
         warp::get()
             .and(default)
+            .or(get_file)
             .or(chat_listing)
             .or(chat_index);
 

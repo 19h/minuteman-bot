@@ -5,8 +5,9 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
 use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue, ok_or_return, ok_or_return_none, some_or_continue};
-use crate::utils::{resolve_chat_name, resolve_user};
-use crate::workers::telegram_handler::{LogItem, UserMeta};
+use crate::components::header::{HeaderBar, HeaderItem};
+use crate::utils::{find_latest_chat_day, resolve_chat_name, resolve_user};
+use crate::workers::telegram_handler::{LogItem, LogItemMembershipType, UserMeta};
 
 pub async fn chat_listing(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
@@ -25,48 +26,13 @@ pub async fn chat_listing(
 
     let date = {
         if date == "latest" {
-            let mut opts = ReadOptions::default();
-
-            let lower_bound = format!("chat_index:{}:", &chat_id).as_bytes().to_vec();
-            let upper_bound = format!("chat_index:{}:\x7f", &chat_id).as_bytes().to_vec();
-
-            opts.set_iterate_upper_bound(upper_bound.clone());
-            opts.set_iterate_lower_bound(lower_bound.clone());
-
-            let mut iter =
-                dbi.iterator_opt(
-                    IteratorMode::From(&upper_bound, Direction::Reverse),
-                    opts,
-                );
-
-            match iter.next()
-                .map(|(k, v)| String::from_utf8(k.to_vec()).ok())
-                .flatten()
-                .map(|key|
-                    key
-                        .split(':')
-                        .last()
-                        .map(|s|
-                            s
-                                .to_string()
-                                .clone()
-                        )
-                )
-                .flatten()
-                .map(|day| {
-                    let day = ok_or_return_none!(day.parse::<i64>()) * 86_400;
-                    let day = NaiveDateTime::from_timestamp(day, 0);
-                    let day: DateTime<Utc> = DateTime::from_utc(day, Utc);
-
-                    Some(day.format("%Y-%m-%d"))
-                })
-                .flatten() {
+            match find_latest_chat_day(&dbi, &chat_id) {
                 Some(day) => day.to_string(),
                 None =>
                     return Ok(
                         warp::reply::html(
                             format!(
-                                "<!DOCTYPE html><html lang=\"en\">{}<body><div class=\"navigation\"><span class=\"title\">{}</span> | <span class=\"nolink\">index</span> | <a href=\"/chat/{}/latest\">latest</a></div>",
+                                "<!DOCTYPE html><html lang=\"en\"><style>{}</style><body><div class=\"navigation\"><span class=\"title\">{}</span> | <span class=\"nolink\">index</span> | <a href=\"/chat/{}/latest\">latest</a></div>",
                                 GLOBAL_CSS,
                                 resolve_chat_name(
                                     &dbi,
@@ -82,6 +48,12 @@ pub async fn chat_listing(
         }
     };
 
+    let chat_name =
+        resolve_chat_name(
+            &dbi,
+            &chat_id,
+        );
+
     let mut out =
         vec!(
             "<!DOCTYPE html><html lang=\"en\">".to_string(),
@@ -90,7 +62,7 @@ pub async fn chat_listing(
             "</style>".to_string(),
             format!(
                 "<head><title>{} - {}</title></head><body>",
-                &chat_id,
+                &chat_name,
                 &date,
             ),
         );
@@ -140,30 +112,35 @@ pub async fn chat_listing(
     let mut opts = ReadOptions::default();
 
     let lower_bound = format!("chat:{}:{}", &chat_id, time_start).as_bytes().to_vec();
+    let upper_bound = format!("chat:{}:{}", &chat_id, time_end).as_bytes().to_vec();
 
-    opts.set_iterate_upper_bound(format!("chat:{}:{}", &chat_id, time_end).as_bytes().to_vec());
+    opts.set_iterate_upper_bound(upper_bound.clone());
+    opts.set_iterate_lower_bound(lower_bound.clone());
 
     let mut iter =
         dbi.iterator_opt(
-            IteratorMode::From(&lower_bound, Direction::Forward),
+            IteratorMode::From(&upper_bound, Direction::Reverse),
             opts,
         );
 
-    let chat_name =
-        resolve_chat_name(
-            &dbi,
-            &chat_id,
-        );
-
     out.push(
-        format!(
-            "<div class=\"navigation\"><span class=\"title\">{} - {}</span> | <span class=\"nolink\">index</span> | {} | {} | {}</div>",
-            &chat_name,
-            &date,
-            "<span class=\"nolink\">previous (none)</span>",
-            "<span class=\"nolink\">next (none)</span>",
-            &format!("<a href=\"/chat/{}/latest\">latest</a>", &chat_id),
-        ),
+        HeaderBar::new()
+            .with_link(
+                "<- home",
+                Some("/".into()),
+            )
+            .with_title(format!("{} - {}", chat_name, date))
+            .with_link(
+                "index",
+                Some(format!("/chat/{}", chat_id)),
+            )
+            .with_link("previous", None)
+            .with_link("next", None)
+            .with_link(
+                "latest",
+                Some(format!("/chat/{}/latest", chat_id)),
+            )
+            .into()
     );
 
     out.push(
@@ -181,9 +158,9 @@ pub async fn chat_listing(
             continue;
         }
 
-        let day = key[key.len() - 1];
+        let timestamp = key[key.len() - 1];
 
-        let day = ok_or_continue!(day.parse::<i64>());
+        let day = ok_or_continue!(timestamp.parse::<i64>());
 
         let day_opt = NaiveDateTime::from_timestamp_opt(day, 0);
 
@@ -238,18 +215,8 @@ pub async fn chat_listing(
                     files
                         .iter()
                         .last()
-                        .map(
-                            |file|
-                                dbi.get(
-                                    format!("file:chat:{}", file).as_bytes(),
-                                )
-                                    .ok()
-                                    .flatten()
-                        )
-                        .flatten()
-                        .map(|file| base64::encode(file))
-                        .map(|file| format!("data:image/jpeg;base64,{}", file))
-                        .map(|file| format!("<img src=\"{}\" style=\"max-height: 300px; max-width: 300px;\"/>", file))
+                        .map(|file| format!("/file/image/{}", file))
+                        .map(|file| format!("<img src=\"{}\" style=\"max-height: 300px; max-width: 300px;\" loading=\"lazy\"/>", file))
                         .map(|file| vec!(file))
                         .unwrap_or(vec!());
 
@@ -272,6 +239,38 @@ pub async fn chat_listing(
                     )
                 );
             },
+            LogItem::Membership { ref user_id, ref membership_type, .. } => {
+                dbg!(&user_id, &membership_type);
+
+                let username =
+                    resolve_user(
+                        &dbi,
+                        &user_id,
+                        false,
+                    );
+
+                out.push(
+                    format!(
+                        "<tr class=\"{}\">\
+                            <td class=\"time\">\
+                                <a>{}</a>\
+                            <td>\
+                            <td class=\"nick\">{}</td>\
+                            <td class=\"content\"><span class=\"reason\">{}</span></td>\
+                        </tr>",
+                        match membership_type {
+                            LogItemMembershipType::Joined => "join",
+                            LogItemMembershipType::Left => "leave",
+                        },
+                        day,
+                        &username,
+                        match membership_type {
+                            LogItemMembershipType::Joined => "joined the chat",
+                            LogItemMembershipType::Left => "left the chat",
+                        },
+                    )
+                );
+            }
             _ => {}
         }
 
