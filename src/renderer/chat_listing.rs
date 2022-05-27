@@ -5,7 +5,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
 use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue, ok_or_return, ok_or_return_none, some_or_continue};
-use crate::utils::resolve_chat_name;
+use crate::utils::{resolve_chat_name, resolve_user};
 use crate::workers::telegram_handler::{LogItem, UserMeta};
 
 pub async fn chat_listing(
@@ -149,10 +149,16 @@ pub async fn chat_listing(
             opts,
         );
 
+    let chat_name =
+        resolve_chat_name(
+            &dbi,
+            &chat_id,
+        );
+
     out.push(
         format!(
             "<div class=\"navigation\"><span class=\"title\">{} - {}</span> | <span class=\"nolink\">index</span> | {} | {} | {}</div>",
-            &chat_id,
+            &chat_name,
             &date,
             "<span class=\"nolink\">previous (none)</span>",
             "<span class=\"nolink\">next (none)</span>",
@@ -203,33 +209,12 @@ pub async fn chat_listing(
 
         match msg {
             LogItem::Message { ref text, ref user_id, .. } => {
-                let user =
-                    dbi.get(
-                        format!("user:meta:{}", user_id).as_bytes(),
-                    )
-                        .ok()
-                        .flatten()
-                        .map(|val|
-                            serde_json::from_slice::<UserMeta>(
-                                &val
-                            )
-                            .ok()
-                        )
-                        .flatten()
-                        .unwrap_or(
-                            UserMeta::default()
-                                .with_id(
-                                    &user_id.clone(),
-                                )
-                                .with_username(
-                                    &user_id.clone(),
-                                ),
-                        );
-
                 let username =
-                    user.username
-                        .as_ref()
-                        .unwrap_or(&user_id);
+                    resolve_user(
+                        &dbi,
+                        &user_id,
+                        false,
+                    );
 
                 out.push(
                     format!(
@@ -252,7 +237,8 @@ pub async fn chat_listing(
                 let file_uris =
                     files
                         .iter()
-                        .filter_map(
+                        .last()
+                        .map(
                             |file|
                                 dbi.get(
                                     format!("file:chat:{}", file).as_bytes(),
@@ -260,10 +246,12 @@ pub async fn chat_listing(
                                     .ok()
                                     .flatten()
                         )
+                        .flatten()
                         .map(|file| base64::encode(file))
                         .map(|file| format!("data:image/jpeg;base64,{}", file))
                         .map(|file| format!("<img src=\"{}\" style=\"max-height: 300px; max-width: 300px;\"/>", file))
-                        .collect::<Vec<String>>();
+                        .map(|file| vec!(file))
+                        .unwrap_or(vec!());
 
                 out.push(
                     format!(

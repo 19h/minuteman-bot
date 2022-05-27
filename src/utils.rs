@@ -109,6 +109,87 @@ macro_rules! respawning_threaded_async {
     };
 }
 
+pub fn resolve_user_meta(
+    user: &UserMeta,
+) -> String {
+    if user.username.is_some() {
+        format!(
+            "{}",
+            &user.username.as_ref().unwrap(),
+        )
+    } else if user.last_name.is_some() {
+        format!(
+            "{} {}",
+            user.first_name,
+            user.last_name.as_ref().unwrap(),
+        )
+    } else {
+        format!(
+            "{}",
+            &user.first_name,
+        )
+    }
+}
+
+pub fn resolve_user_meta_with_id(
+    user: &UserMeta,
+) -> String {
+    if user.username.is_some() {
+        format!(
+            "{} ({})",
+            &user.username.as_ref().unwrap(),
+            &user.id,
+        )
+    } else if user.last_name.is_some() {
+        format!(
+            "{} {} ({})",
+            user.first_name,
+            user.last_name.as_ref().unwrap(),
+            &user.id,
+        )
+    } else {
+        format!(
+            "{} ({})",
+            &user.first_name,
+            &user.id,
+        )
+    }
+}
+
+pub fn resolve_user(
+    db: &DBWithThreadMode<MultiThreaded>,
+    user_id: &str,
+    with_id: bool,
+) -> String {
+    db.get(
+        format!("user:meta:{}", user_id)
+            .as_bytes(),
+    )
+        .ok()
+        .flatten()
+        .map(|v|
+            serde_json::from_slice::<UserMeta>(
+                &v,
+            )
+                .ok()
+        )
+        .flatten()
+        .map(|user|
+                 if with_id {
+                     resolve_user_meta_with_id(
+                         &user,
+                     )
+                 } else {
+                     resolve_user_meta(
+                         &user,
+                     )
+                 },
+        )
+        .unwrap_or(
+            user_id.to_string(),
+        )
+}
+
 pub fn resolve_chat_name(
     db: &DBWithThreadMode<MultiThreaded>,
     chat_id: &str,
@@ -201,44 +282,6 @@ pub fn resolve_chat_name(
         )
         // try treating it as username
         .unwrap_or_else(
-            ||
-                db.get(
-                    format!("user:meta:{}", chat_id)
-                        .as_bytes(),
-                )
-                    .ok()
-                    .flatten()
-                    .map(|v|
-                        serde_json::from_slice::<UserMeta>(
-                            &v,
-                        )
-                            .ok()
-                    )
-                    .flatten()
-                    .map(|user|
-                             if user.username.is_some() {
-                                 format!(
-                                     "{} ({})",
-                                     &user.username.unwrap(),
-                                     &user.id,
-                                 )
-                             } else if user.last_name.is_some() {
-                                 format!(
-                                     "{} {} ({})",
-                                     user.first_name,
-                                     user.last_name.unwrap(),
-                                     &user.id,
-                                 )
-                             } else {
-                                 format!(
-                                     "{} ({})",
-                                     &user.first_name,
-                                     &user.id,
-                                 )
-                             },
-                    )
-                    .unwrap_or(
-                        chat_id.to_string(),
-                    )
+            || resolve_user(&db, chat_id, true),
         )
 }
