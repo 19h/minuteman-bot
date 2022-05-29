@@ -155,3 +155,7 @@ table.log tr.topic td.content span.topic,
 table.log tr.message td.content .bold {
     font-weight: 700
 }
+
+table.log tr td.content span.note {
+    display: block;
+}

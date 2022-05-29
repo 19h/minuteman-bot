@@ -212,9 +212,7 @@ pub async fn chat_listing(
                     )
                 );
             },
-            LogItem::Media { ref files, ref user_id, ref caption, .. } if caption.is_some() => {
-                dbg!(&files);
-
+            LogItem::Media { ref files, ref user_id, ref caption, .. } => {
                 let file_uris =
                     files
                         .iter()
@@ -235,9 +233,16 @@ pub async fn chat_listing(
                         "Unknown".to_string()
                     };
 
+                let media_caption =
+                    if let Some(caption) = caption {
+                        &*caption
+                    } else {
+                        "<span class=\"note\">Message has no caption.</span>"
+                    };
+
                 out.push(
                     format!(
-                        "<tr class=\"message\">\
+                        "<tr class=\"message action\">\
                             <td class=\"time\">\
                                 <a>{}</a>\
                             <td>\
@@ -248,7 +253,7 @@ pub async fn chat_listing(
                         &username,
                         format!(
                             "{} <br/> {}",
-                            caption.as_ref().unwrap().clone(),
+                            &media_caption,
                             file_uris.join(" "),
                         ),
                     )
