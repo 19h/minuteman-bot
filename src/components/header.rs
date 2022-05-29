@@ -46,11 +46,11 @@ impl HeaderBar {
 
     pub fn with_title(
         mut self,
-        label: String,
+        label: impl Into<String>,
     ) -> Self {
         self.items.push(
             HeaderItem::Title {
-                label,
+                label: label.into().clone(),
             },
         );
 
@@ -70,6 +70,12 @@ impl HeaderBar {
         );
 
         self
+    }
+
+    pub fn to_string(
+        self,
+    ) -> String {
+        self.into()
     }
 }
 

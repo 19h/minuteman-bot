@@ -13,3 +13,4 @@ pub mod utils;
 pub mod renderer;
 pub mod prelude;
 pub mod components;
+pub mod config;

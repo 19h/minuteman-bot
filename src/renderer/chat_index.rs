@@ -4,6 +4,8 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
 use crate::{GLOBAL_CSS, MinutemanError, ok_or_continue};
+use crate::components::header::HeaderBar;
+use crate::config::get_version;
 use crate::utils::resolve_chat_name;
 use crate::workers::telegram_handler::ChatMeta;
 

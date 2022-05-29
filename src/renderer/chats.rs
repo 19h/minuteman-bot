@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use rocksdb::{DBWithThreadMode, Direction, IteratorMode, MultiThreaded, ReadOptions};
 
 use crate::{GLOBAL_CSS, MinutemanError};
+use crate::components::header::HeaderBar;
+use crate::config::get_version;
 use crate::utils::resolve_chat_name;
 
 pub async fn chats(
@@ -28,6 +30,11 @@ pub async fn chats(
             GLOBAL_CSS.to_string(),
             "</style>".to_string(),
             "<head><title>channel index</title></head><body>".to_string(),
+            HeaderBar::new()
+                .with_title(
+                    format!("minuteman {}", get_version()),
+                )
+                .to_string(),
             "<div class=\"channels\"><ul>".to_string(),
         );
 
