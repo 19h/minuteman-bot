@@ -1374,18 +1374,31 @@ pub async fn handle_message(
                     .date,
             );
 
+    let use_forwarded_chat =
+        match &message.chat {
+            ChatMeta::Group(_)
+            | ChatMeta::SuperGroup(_)
+            | ChatMeta::Channel(_) => false,
+            ChatMeta::User(_)
+            | ChatMeta::Unknown(_) => true,
+        };
+
     let chat_id =
         message
             .forward
             .as_ref()
-            .map(|original_message|
-                     match original_message.from {
-                         ForwardFromMeta::User { ref user } => Some(user.id.clone()),
-                         ForwardFromMeta::Channel { ref channel, .. } => Some(channel.id.clone()),
-                         ForwardFromMeta::ChannelHiddenUser { .. } => None,
-                         ForwardFromMeta::HiddenGroupAdmin { ref chat_id, .. } => Some(chat_id.clone()),
-                     }
-            )
+            .map(|original_message| {
+                if !use_forwarded_chat {
+                    return None;
+                }
+
+                match original_message.from {
+                    ForwardFromMeta::User { ref user } => Some(user.id.clone()),
+                    ForwardFromMeta::Channel { ref channel, .. } => Some(channel.id.clone()),
+                    ForwardFromMeta::ChannelHiddenUser { .. } => None,
+                    ForwardFromMeta::HiddenGroupAdmin { ref chat_id, .. } => Some(chat_id.clone()),
+                }
+            })
             .flatten()
             .unwrap_or(
                 message
@@ -1473,7 +1486,11 @@ pub async fn handle_message(
             message
                 .forward
                 .as_ref()
-                .map(|forward|
+                .map(|forward| {
+                    if !use_forwarded_chat {
+                        return None;
+                    }
+
                     match forward.from {
                         ForwardFromMeta::User { ref user } =>
                             Some(serde_json::to_string(&user)),
@@ -1481,7 +1498,7 @@ pub async fn handle_message(
                             Some(serde_json::to_string(&channel)),
                         _ => None,
                     }
-                )
+                })
                 .flatten()
                 .unwrap_or(
                     serde_json::to_string(&message.chat),

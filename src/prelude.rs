@@ -2,7 +2,7 @@ use std::env;
 
 pub const GLOBAL_CSS: &str = include_str!("./assets/global.css");
 
-pub const MAX_FILE_SIZE: i64 = 1024 * 1024 * 50; // 50 MB
+pub const MAX_FILE_SIZE: i64 = 1024 * 1024 * 256; // 50 MB
 
 pub static JOB_SLEEP_INTERVAL: u64 = 2_000u64;
 
