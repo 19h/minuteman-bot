@@ -118,22 +118,51 @@ pub async fn extract_file_paths(
 }
 
 pub async fn get_files(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
     message: &InterMessage,
 ) -> Vec<(String, Vec<u8>)> {
     let mut files = Vec::<(String, Vec<u8>)>::new();
 
     for (file_id, file_path) in extract_file_paths(&api, message).await {
-        files.push(
-            (
-                file_id,
-                ok_or_continue!(
-                    get_file(
-                        &file_path,
-                    ).await
+        let file = {
+            let db = db.lock().unwrap();
+
+            if db.key_may_exist(&file_id) {
+                println!("{} already exists, returning from db", &file_id);
+
+                db.get(
+                    build_file_key(
+                        FileEntryType::User,
+                        &file_id,
+                    ),
+                )
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            }
+        };
+
+        let file =
+            if file.is_none() {
+                get_file(
+                    &file_path,
+                )
+                    .await
+                    .ok()
+            } else {
+                file
+            };
+
+        file.map(|entry| {
+            files.push(
+                (
+                    file_id,
+                    entry,
                 ),
-            ),
-        );
+            );
+        });
     }
 
     files
@@ -462,6 +491,7 @@ pub struct InterMessage {
     pub date: i64,
     pub chat: ChatMeta,
     pub forward: Option<ForwardMeta>,
+    pub reply_to_message: Option<Box<InterMessage>>,
     pub edit_date: Option<i64>,
     pub kind: MessageKind,
 }
@@ -474,11 +504,18 @@ impl From<Message> for InterMessage {
             date: msg.date,
             chat: msg.chat.into(),
             forward:
-                msg.forward
-                    .as_ref()
-                    .map(|forward|
-                        forward.into(),
-                    ),
+            msg.forward
+                .as_ref()
+                .map(|forward|
+                         forward.into(),
+                ),
+            reply_to_message:
+            msg
+                .reply_to_message
+                .map(|reply| -> InterMessage {
+                    reply.into()
+                })
+                .map(|val| Box::new(val)),
             edit_date: msg.edit_date,
             kind: msg.kind,
         }
@@ -499,12 +536,19 @@ impl From<ChannelPost> for InterMessage {
             date: msg.date,
             chat: msg.chat.into(),
             forward:
-                msg
-                    .forward
-                    .as_ref()
-                    .map(|forward|
-                        forward.into(),
-                    ),
+            msg
+                .forward
+                .as_ref()
+                .map(|forward|
+                         forward.into(),
+                ),
+            reply_to_message:
+            msg
+                .reply_to_message
+                .map(|reply| -> InterMessage {
+                    reply.into()
+                })
+                .map(|val| Box::new(val)),
             edit_date: msg.edit_date,
             kind: msg.kind,
         }
@@ -514,6 +558,23 @@ impl From<ChannelPost> for InterMessage {
 impl From<&ChannelPost> for InterMessage {
     fn from(chan: &ChannelPost) -> Self {
         chan.clone().into()
+    }
+}
+
+impl From<Box<MessageOrChannelPost>> for InterMessage {
+    fn from(msg: Box<MessageOrChannelPost>) -> Self {
+        match msg.as_ref() {
+            MessageOrChannelPost::Message(message) =>
+                message.into(),
+            MessageOrChannelPost::ChannelPost(post) =>
+                post.into(),
+        }
+    }
+}
+
+impl From<&Box<MessageOrChannelPost>> for InterMessage {
+    fn from(msg: &Box<MessageOrChannelPost>) -> Self {
+        msg.clone().into()
     }
 }
 
@@ -790,6 +851,7 @@ pub enum LogItem {
         time: i64,
         text: String,
         entities: Vec<LogItemMessageEntity>,
+        source: Option<InterMessage>,
     },
     Media {
         user_id: Option<String>,
@@ -798,32 +860,37 @@ pub enum LogItem {
         #[serde(rename = "type")]
         media_type: LogItemMediaType,
         files: Vec<String>,
+        source: Option<InterMessage>,
     },
     Special {
         user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         special_type: LogItemSpecialType,
+        source: Option<InterMessage>,
     },
     Membership {
         user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         membership_type: LogItemMembershipType,
+        source: Option<InterMessage>,
     },
     Chat {
         user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         chat_type: LogItemChatType,
+        source: Option<InterMessage>,
     },
     Pin {
         user_id: Option<String>,
         time: i64,
         message: Option<String>,
         message_id: String,
+        source: Option<InterMessage>,
     },
-    Unimplemented(String, Option<String>, i64),
+    Unimplemented(String, Option<String>, i64, Option<InterMessage>),
 }
 
 async fn process_files(
@@ -833,6 +900,7 @@ async fn process_files(
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let file_refs =
         get_files(
+            db.clone(),
             api,
             message,
         ).await;
@@ -865,6 +933,27 @@ pub async fn process_photosize(
     photo_size: &PhotoSize,
     file_id: Option<&str>,
 ) -> Option<String> {
+    let file_key =
+        build_file_key(
+            FileEntryType::VideoThumb,
+            file_id
+                .unwrap_or(
+                    &photo_size
+                        .file_id
+                        .to_string(),
+                ),
+        );
+
+    {
+        let db = db.lock().unwrap();
+
+        if db.key_may_exist(&file_key) {
+            println!("{} already exists, not trying to fetch", file_key);
+
+            return Some(photo_size.file_id.clone());
+        }
+    }
+
     if let Some(file_path) = get_file_path(&api, &photo_size).await {
         let file =
             match get_file(
@@ -879,15 +968,7 @@ pub async fn process_photosize(
             let db = db.lock().unwrap();
 
             db.put(
-                build_file_key(
-                    FileEntryType::VideoThumb,
-                    file_id
-                        .unwrap_or(
-                            &photo_size
-                                .file_id
-                                .to_string(),
-                        ),
-                ),
+                file_key,
                 &file,
             ).ok()?;
 
@@ -968,6 +1049,7 @@ pub async fn build_log_item(
                         }
                     )
                     .collect(),
+                source: Some(message.clone()),
             }
         }
 
@@ -984,6 +1066,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1001,6 +1084,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1024,6 +1108,7 @@ pub async fn build_log_item(
                     height: photo.height,
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1040,6 +1125,7 @@ pub async fn build_log_item(
                     set_name: data.set_name.clone(),
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1074,6 +1160,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1090,6 +1177,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1119,6 +1207,7 @@ pub async fn build_log_item(
                     thumb_file_id,
                 },
                 files: files.clone(),
+                source: Some(message.clone()),
             }
         }
 
@@ -1135,6 +1224,7 @@ pub async fn build_log_item(
                     first_name: data.first_name.clone(),
                     last_name: data.last_name.clone(),
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1149,6 +1239,7 @@ pub async fn build_log_item(
                     latitude: data.latitude,
                     longitude: data.longitude,
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1197,6 +1288,7 @@ pub async fn build_log_item(
                     open_period: data.open_period.clone(),
                     close_date: data.close_date.clone(),
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1217,6 +1309,7 @@ pub async fn build_log_item(
                     address: data.address.clone(),
                     foursquare_id: data.foursquare_id.clone(),
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1225,6 +1318,7 @@ pub async fn build_log_item(
                 user_id: msg_from_id,
                 time: message.date,
                 membership_type: LogItemMembershipType::Joined,
+                source: Some(message.clone()),
             }
         }
 
@@ -1233,6 +1327,7 @@ pub async fn build_log_item(
                 user_id: msg_from_id,
                 time: message.date,
                 membership_type: LogItemMembershipType::Left,
+                source: Some(message.clone()),
             }
         }
 
@@ -1246,6 +1341,7 @@ pub async fn build_log_item(
                 LogItemChatType::NewTitle {
                     title: data.clone(),
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1272,6 +1368,7 @@ pub async fn build_log_item(
                 LogItemChatType::NewPhoto {
                     file_id: photo.as_ref().map(|p| p.clone()),
                 },
+                source: Some(message.clone()),
             }
         }
 
@@ -1280,6 +1377,7 @@ pub async fn build_log_item(
                 user_id: msg_from_id,
                 time: message.date,
                 chat_type: LogItemChatType::DeletePhoto,
+                source: Some(message.clone()),
             }
         }
 
@@ -1291,6 +1389,7 @@ pub async fn build_log_item(
                 time: message.date,
                 message: data.text(),
                 message_id: data.to_message_id().to_string(),
+                source: Some(message.clone()),
             }
         }
         MessageKind::GroupChatCreated => {
@@ -1298,6 +1397,7 @@ pub async fn build_log_item(
                 "GroupChatCreated".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
 
@@ -1306,6 +1406,7 @@ pub async fn build_log_item(
                 "SupergroupChatCreated".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
 
@@ -1314,6 +1415,7 @@ pub async fn build_log_item(
                 "ChannelChatCreated".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
 
@@ -1322,6 +1424,7 @@ pub async fn build_log_item(
                 "MigrateToChatId".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
 
@@ -1330,6 +1433,7 @@ pub async fn build_log_item(
                 "MigrateFromChatId".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
 
@@ -1340,6 +1444,7 @@ pub async fn build_log_item(
                 "Unknown".to_string(),
                 msg_from_id,
                 message.date,
+                Some(message.clone()),
             )
         }
     }
@@ -1539,7 +1644,7 @@ pub async fn handle_inter_message(
     handle_message(
         db.clone(),
         &api,
-        &inter_msg,
+        dbg!(&inter_msg),
         &files,
     ).await?;
 
@@ -1547,7 +1652,7 @@ pub async fn handle_inter_message(
         process_user(
             db.clone(),
             &api,
-            from,
+            dbg!(from),
         ).await?;
     }
 
@@ -1571,7 +1676,15 @@ async fn run(
         match update.kind {
             UpdateKind::Message(ref message)
             | UpdateKind::EditedMessage(ref message) => {
-                let inter_msg = message.into();
+                let inter_msg = InterMessage::from(message);
+
+                if let Some(reply_to_message) = inter_msg.reply_to_message.as_ref() {
+                    handle_inter_message(
+                        db.clone(),
+                        &api,
+                        &reply_to_message.as_ref(),
+                    ).await?;
+                }
 
                 handle_inter_message(
                     db.clone(),
@@ -1581,7 +1694,15 @@ async fn run(
             },
             UpdateKind::ChannelPost(ref post)
             | UpdateKind::EditedChannelPost(ref post) => {
-                let inter_msg = post.into();
+                let inter_msg = InterMessage::from(post);
+
+                if let Some(reply_to_message) = inter_msg.reply_to_message.as_ref() {
+                    handle_inter_message(
+                        db.clone(),
+                        &api,
+                        &reply_to_message.as_ref(),
+                    ).await?;
+                }
 
                 handle_inter_message(
                     db.clone(),
