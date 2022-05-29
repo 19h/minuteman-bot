@@ -1374,13 +1374,32 @@ pub async fn handle_message(
                     .date,
             );
 
+    let chat_id =
+        message
+            .forward
+            .as_ref()
+            .map(|original_message|
+                     match original_message.from {
+                         ForwardFromMeta::User { ref user } => Some(user.id.clone()),
+                         ForwardFromMeta::Channel { ref channel, .. } => Some(channel.id.clone()),
+                         ForwardFromMeta::ChannelHiddenUser { .. } => None,
+                         ForwardFromMeta::HiddenGroupAdmin { ref chat_id, .. } => Some(chat_id.clone()),
+                     }
+            )
+            .flatten()
+            .unwrap_or(
+                message
+                    .chat
+                    .id(),
+            );
+
     // store actual message
 
     {
         let message_key =
             format!(
                 "chat:{}:{}",
-                message.chat.id().to_string(),
+                &chat_id,
                 established_date.to_string(),
             );
 
@@ -1398,7 +1417,7 @@ pub async fn handle_message(
         let chat_index_key =
             format!(
                 "chat_index:{}:{}",
-                message.chat.id().to_string(),
+                &chat_id,
                 (established_date / 86400).to_string(),
             );
 
@@ -1414,7 +1433,7 @@ pub async fn handle_message(
         let chat_key =
             format!(
                 "chat_rel:{}",
-                message.chat.id().to_string(),
+                &chat_id,
             );
 
         db.put(
@@ -1429,7 +1448,7 @@ pub async fn handle_message(
         let message_ref_key =
             format!(
                 "chat_ref:{}:{}",
-                message.chat.id().to_string(),
+                &chat_id,
                 message.id.to_string(),
             );
 
@@ -1447,13 +1466,26 @@ pub async fn handle_message(
         let chat_meta_key =
             format!(
                 "chat:meta:{}",
-                message.chat.id().to_string(),
+                &chat_id,
             );
 
         let chat_meta_value =
-            serde_json::to_string(
-                &message.chat,
-            )?;
+            message
+                .forward
+                .as_ref()
+                .map(|forward|
+                    match forward.from {
+                        ForwardFromMeta::User { ref user } =>
+                            Some(serde_json::to_string(&user)),
+                        ForwardFromMeta::Channel { ref channel, .. } =>
+                            Some(serde_json::to_string(&channel)),
+                        _ => None,
+                    }
+                )
+                .flatten()
+                .unwrap_or(
+                    serde_json::to_string(&message.chat),
+                )?;
 
         db.put(
             &chat_meta_key,
@@ -1516,6 +1548,8 @@ async fn run(
         let db = db.clone();
 
         let update = update?;
+
+        dbg!(&update);
 
         match update.kind {
             UpdateKind::Message(ref message)
