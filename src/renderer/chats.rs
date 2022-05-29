@@ -7,7 +7,10 @@ use crate::utils::resolve_chat_name;
 
 pub async fn chats(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
+    listing_type: &'static str,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    let list_all = listing_type == "all";
+
     let dbi =
         db.lock()
             .map_err(|err|
@@ -50,6 +53,10 @@ pub async fn chats(
         }
 
         let key = key[key.len() - 1];
+
+        if !list_all && !key.starts_with(&['-']) {
+            continue;
+        }
 
         let chat_name =
             resolve_chat_name(

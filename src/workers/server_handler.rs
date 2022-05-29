@@ -13,12 +13,25 @@ fn with_db(
     warp::any().map(move || db.clone())
 }
 
+fn with_listing_type<T: Clone + Send>(
+    listing_type: T,
+) -> impl Filter<Extract=(T, ), Error=Infallible> + Clone {
+    warp::any().map(move || listing_type.clone())
+}
+
 async fn run(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let default =
         warp::path::end()
             .and(with_db(db.clone()))
+            .and(with_listing_type("groups"))
+            .and_then(renderer::chats::chats);
+
+    let default_all =
+        warp::path("all")
+            .and(with_db(db.clone()))
+            .and(with_listing_type("all"))
             .and_then(renderer::chats::chats);
 
     let chat_index =
@@ -44,6 +57,7 @@ async fn run(
     let routes =
         warp::get()
             .and(default)
+            .or(default_all)
             .or(get_file)
             .or(chat_listing)
             .or(chat_index);
