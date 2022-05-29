@@ -53,7 +53,7 @@ pub async fn get_file_path(
 
 pub async fn extract_file_paths(
     api: &Api,
-    message: &Message,
+    message: &InterMessage,
 ) -> Vec<(String, String)> {
     let mut file_refs = Vec::<(String, String)>::new();
 
@@ -119,7 +119,7 @@ pub async fn extract_file_paths(
 
 pub async fn get_files(
     api: &Api,
-    message: &Message,
+    message: &InterMessage,
 ) -> Vec<(String, Vec<u8>)> {
     let mut files = Vec::<(String, Vec<u8>)>::new();
 
@@ -162,6 +162,23 @@ impl Default for UserMeta {
     }
 }
 
+impl ToUserId for UserMeta {
+    fn to_user_id(&self) -> UserId {
+        UserId(
+            self.id.clone().parse::<i64>()
+                .unwrap_or_else(|e| {
+                    eprintln!(
+                        "WARNING: ERROR: TRIED TO PARSE USER ID, BUT FAILED: {} -- {:?}",
+                        self.id,
+                        e,
+                    );
+
+                    0i64
+                }),
+        )
+    }
+}
+
 impl UserMeta {
     pub fn with_id(
         self,
@@ -196,6 +213,12 @@ impl From<User> for UserMeta {
             is_bot: user.is_bot,
             language_code: user.language_code,
         }
+    }
+}
+
+impl From<&User> for UserMeta {
+    fn from(user: &User) -> Self {
+        user.clone().into()
     }
 }
 
@@ -250,6 +273,31 @@ impl From<&Supergroup> for SuperGroupMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMeta {
+    pub id: String,
+    pub title: String,
+    pub username: Option<String>,
+    pub invite_link: Option<String>,
+}
+
+impl From<Channel> for ChannelMeta {
+    fn from(chan: Channel) -> Self {
+        Self {
+            id: chan.id.clone().to_string(),
+            title: chan.title,
+            username: chan.username,
+            invite_link: chan.invite_link,
+        }
+    }
+}
+
+impl From<&Channel> for ChannelMeta {
+    fn from(chan: &Channel) -> Self {
+        chan.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawChatMeta {
     pub id: String,
     pub chat_type: String,
@@ -289,7 +337,20 @@ pub enum ChatMeta {
     User(UserMeta),
     Group(GroupMeta),
     SuperGroup(SuperGroupMeta),
+    Channel(ChannelMeta),
     Unknown(RawChatMeta),
+}
+
+impl ChatMeta {
+    pub fn id(&self) -> String {
+        match self {
+            ChatMeta::User(user) => user.id.clone(),
+            ChatMeta::Group(group) => group.id.clone(),
+            ChatMeta::SuperGroup(group) => group.id.clone(),
+            ChatMeta::Channel(channel) => channel.id.clone(),
+            ChatMeta::Unknown(raw_chat) => raw_chat.id.clone(),
+        }
+    }
 }
 
 impl From<MessageChat> for ChatMeta {
@@ -306,6 +367,153 @@ impl From<MessageChat> for ChatMeta {
 impl From<&MessageChat> for ChatMeta {
     fn from(chat: &MessageChat) -> Self {
         chat.clone().into()
+    }
+}
+
+impl From<Channel> for ChatMeta {
+    fn from(chan: Channel) -> Self {
+        ChatMeta::Channel(chan.into())
+    }
+}
+
+impl From<&Channel> for ChatMeta {
+    fn from(chan: &Channel) -> Self {
+        ChatMeta::Channel(chan.clone().into())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ForwardFromMeta {
+    User {
+        user: UserMeta,
+    },
+    Channel {
+        channel: ChannelMeta,
+        message_id: i64,
+    },
+    ChannelHiddenUser {
+        sender_name: String,
+    },
+    HiddenGroupAdmin {
+        chat_id: String,
+        title: String,
+    },
+}
+
+impl From<ForwardFrom> for ForwardFromMeta {
+    fn from(forward_from: ForwardFrom) -> Self {
+        match forward_from {
+            ForwardFrom::User { ref user } =>
+                ForwardFromMeta::User {
+                    user: user.into(),
+                },
+
+            ForwardFrom::Channel { ref channel, ref message_id } =>
+                ForwardFromMeta::Channel {
+                    channel: channel.into(),
+                    message_id: *message_id,
+                },
+
+            ForwardFrom::ChannelHiddenUser { ref sender_name } =>
+                ForwardFromMeta::ChannelHiddenUser {
+                    sender_name: sender_name.clone(),
+                },
+
+            ForwardFrom::HiddenGroupAdmin { ref chat_id, ref title } =>
+                ForwardFromMeta::HiddenGroupAdmin {
+                    chat_id: chat_id.to_string().clone(),
+                    title: title.clone(),
+                },
+        }
+    }
+}
+
+impl From<&ForwardFrom> for ForwardFromMeta {
+    fn from(forward_from: &ForwardFrom) -> Self {
+        forward_from.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForwardMeta {
+    pub date: i64,
+    pub from: ForwardFromMeta,
+}
+
+impl From<Forward> for ForwardMeta {
+    fn from(forward: Forward) -> Self {
+        ForwardMeta {
+            date: forward.date,
+            from: forward.from.into(),
+        }
+    }
+}
+
+impl From<&Forward> for ForwardMeta {
+    fn from(forward: &Forward) -> Self {
+        forward.clone().into()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterMessage {
+    pub id: MessageId,
+    pub from: Option<UserMeta>,
+    pub date: i64,
+    pub chat: ChatMeta,
+    pub forward: Option<ForwardMeta>,
+    pub edit_date: Option<i64>,
+    pub kind: MessageKind,
+}
+
+impl From<Message> for InterMessage {
+    fn from(msg: Message) -> Self {
+        InterMessage {
+            id: msg.id,
+            from: Some(msg.from.into()),
+            date: msg.date,
+            chat: msg.chat.into(),
+            forward:
+                msg.forward
+                    .as_ref()
+                    .map(|forward|
+                        forward.into(),
+                    ),
+            edit_date: msg.edit_date,
+            kind: msg.kind,
+        }
+    }
+}
+
+impl From<&Message> for InterMessage {
+    fn from(msg: &Message) -> Self {
+        msg.clone().into()
+    }
+}
+
+impl From<ChannelPost> for InterMessage {
+    fn from(msg: ChannelPost) -> Self {
+        InterMessage {
+            id: msg.id,
+            from: None,
+            date: msg.date,
+            chat: msg.chat.into(),
+            forward:
+                msg
+                    .forward
+                    .as_ref()
+                    .map(|forward|
+                        forward.into(),
+                    ),
+            edit_date: msg.edit_date,
+            kind: msg.kind,
+        }
+    }
+}
+
+impl From<&ChannelPost> for InterMessage {
+    fn from(chan: &ChannelPost) -> Self {
+        chan.clone().into()
     }
 }
 
@@ -353,7 +561,7 @@ pub fn find_biggest_photo(
 pub async fn process_user_profile_picture(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
-    user: &User,
+    user: &UserMeta,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let user_profile_photos =
         api.send(
@@ -398,7 +606,7 @@ pub async fn process_user_profile_picture(
 
 pub async fn process_user_meta(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
-    user: &User,
+    user: &UserMeta,
 ) -> Result<UserMeta, Box<dyn std::error::Error>> {
     let user = user.clone();
 
@@ -425,7 +633,7 @@ pub async fn process_user_meta(
 pub async fn process_user(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
-    user: &User,
+    user: &UserMeta,
 ) -> Result<(), Box<dyn std::error::Error>> {
     process_user_profile_picture(db.clone(), api, user).await;
     process_user_meta(db.clone(), user).await;
@@ -484,7 +692,6 @@ pub struct LogItemSpecialTypeLocation {
     pub longitude: f32,
     pub latitude: f32,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -579,13 +786,13 @@ pub struct LogItemMessageEntity {
 #[serde(rename_all = "lowercase")]
 pub enum LogItem {
     Message {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         text: String,
         entities: Vec<LogItemMessageEntity>,
     },
     Media {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         caption: Option<String>,
         #[serde(rename = "type")]
@@ -593,36 +800,36 @@ pub enum LogItem {
         files: Vec<String>,
     },
     Special {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         special_type: LogItemSpecialType,
     },
     Membership {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         membership_type: LogItemMembershipType,
     },
     Chat {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         #[serde(rename = "type")]
         chat_type: LogItemChatType,
     },
     Pin {
-        user_id: String,
+        user_id: Option<String>,
         time: i64,
         message: Option<String>,
         message_id: String,
     },
-    Unimplemented(String, String, i64),
+    Unimplemented(String, Option<String>, i64),
 }
 
 async fn process_files(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
-    message: &Message,
+    message: &InterMessage,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let file_refs =
         get_files(
@@ -727,16 +934,26 @@ pub fn map_entity_kind(
 pub async fn build_log_item(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
-    message: &Message,
+    message: &InterMessage,
     files: &Vec<String>,
 ) -> LogItem {
+    let msg_from_id =
+        message
+            .from
+            .as_ref()
+            .map(|from|
+                     from.id
+                         .to_string()
+                         .clone(),
+            );
+
     match message.kind {
         MessageKind::Text {
             ref data,
             ref entities,
         } => {
-            return LogItem::Message {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Message {
+                user_id: msg_from_id,
                 time: message.date,
                 text: data.clone(),
                 entities:
@@ -751,12 +968,12 @@ pub async fn build_log_item(
                         }
                     )
                     .collect(),
-            };
+            }
         }
 
         MessageKind::Audio { ref data } => {
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: None,
                 media_type:
@@ -767,15 +984,15 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Document {
             ref data,
             ref caption,
         } => {
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: (*caption).clone(),
                 media_type:
@@ -784,7 +1001,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Photo {
@@ -797,8 +1014,8 @@ pub async fn build_log_item(
                     &data.clone(),
                 );
 
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: (*caption).clone(),
                 media_type:
@@ -807,14 +1024,14 @@ pub async fn build_log_item(
                     height: photo.height,
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Sticker {
             ref data,
         } => {
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: None,
                 media_type:
@@ -823,7 +1040,7 @@ pub async fn build_log_item(
                     set_name: data.set_name.clone(),
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Video {
@@ -844,8 +1061,8 @@ pub async fn build_log_item(
                     _ => None,
                 };
 
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: (*caption).clone(),
                 media_type:
@@ -857,14 +1074,14 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Voice {
             ref data,
         } => {
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: None,
                 media_type:
@@ -873,7 +1090,7 @@ pub async fn build_log_item(
                     mime_type: data.mime_type.clone(),
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::VideoNote {
@@ -892,8 +1109,8 @@ pub async fn build_log_item(
                     _ => None,
                 };
 
-            return LogItem::Media {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Media {
+                user_id: msg_from_id,
                 time: message.date,
                 caption: None,
                 media_type:
@@ -902,14 +1119,14 @@ pub async fn build_log_item(
                     thumb_file_id,
                 },
                 files: files.clone(),
-            };
+            }
         }
 
         MessageKind::Contact {
             ref data,
         } => {
-            return LogItem::Special {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Special {
+                user_id: msg_from_id,
                 time: message.date,
                 special_type:
                 LogItemSpecialType::Contact {
@@ -918,28 +1135,28 @@ pub async fn build_log_item(
                     first_name: data.first_name.clone(),
                     last_name: data.last_name.clone(),
                 },
-            };
+            }
         }
 
         MessageKind::Location {
             ref data,
         } => {
-            return LogItem::Special {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Special {
+                user_id: msg_from_id,
                 time: message.date,
                 special_type:
                 LogItemSpecialType::Location {
                     latitude: data.latitude,
                     longitude: data.longitude,
                 },
-            };
+            }
         }
 
         MessageKind::Poll {
             ref data,
         } => {
-            return LogItem::Special {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Special {
+                user_id: msg_from_id,
                 time: message.date,
                 special_type:
                 LogItemSpecialType::Poll {
@@ -980,14 +1197,14 @@ pub async fn build_log_item(
                     open_period: data.open_period.clone(),
                     close_date: data.close_date.clone(),
                 },
-            };
+            }
         }
 
         MessageKind::Venue {
             ref data,
         } => {
-            return LogItem::Special {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Special {
+                user_id: msg_from_id,
                 time: message.date,
                 special_type:
                 LogItemSpecialType::Venue {
@@ -1000,36 +1217,36 @@ pub async fn build_log_item(
                     address: data.address.clone(),
                     foursquare_id: data.foursquare_id.clone(),
                 },
-            };
+            }
         }
 
         MessageKind::NewChatMembers { .. } => {
-            return LogItem::Membership {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Membership {
+                user_id: msg_from_id,
                 time: message.date,
                 membership_type: LogItemMembershipType::Joined,
-            };
+            }
         }
 
         MessageKind::LeftChatMember { .. } => {
-            return LogItem::Membership {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Membership {
+                user_id: msg_from_id,
                 time: message.date,
                 membership_type: LogItemMembershipType::Left,
-            };
+            }
         }
 
         MessageKind::NewChatTitle {
             ref data,
         } => {
-            return LogItem::Chat {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Chat {
+                user_id: msg_from_id,
                 time: message.date,
                 chat_type:
                 LogItemChatType::NewTitle {
                     title: data.clone(),
                 },
-            };
+            }
         }
 
         MessageKind::NewChatPhoto {
@@ -1048,82 +1265,82 @@ pub async fn build_log_item(
                     None,
                 ).await;
 
-            return LogItem::Chat {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Chat {
+                user_id: msg_from_id,
                 time: message.date,
                 chat_type:
                 LogItemChatType::NewPhoto {
                     file_id: photo.as_ref().map(|p| p.clone()),
                 },
-            };
+            }
         }
 
         MessageKind::DeleteChatPhoto => {
-            return LogItem::Chat {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Chat {
+                user_id: msg_from_id,
                 time: message.date,
                 chat_type: LogItemChatType::DeletePhoto,
-            };
+            }
         }
 
         MessageKind::PinnedMessage {
             ref data,
         } => {
-            return LogItem::Pin {
-                user_id: message.from.id.to_string().clone(),
+            LogItem::Pin {
+                user_id: msg_from_id,
                 time: message.date,
                 message: data.text(),
                 message_id: data.to_message_id().to_string(),
-            };
+            }
         }
         MessageKind::GroupChatCreated => {
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "GroupChatCreated".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
 
         MessageKind::SupergroupChatCreated => {
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "SupergroupChatCreated".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
 
         MessageKind::ChannelChatCreated => {
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "ChannelChatCreated".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
 
         MessageKind::MigrateToChatId { .. } => {
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "MigrateToChatId".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
 
         MessageKind::MigrateFromChatId { .. } => {
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "MigrateFromChatId".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
 
         MessageKind::Unknown { .. } => {
             dbg!(&message);
 
-            return LogItem::Unimplemented(
+            LogItem::Unimplemented(
                 "Unknown".to_string(),
-                message.from.id.to_string().clone(),
+                msg_from_id,
                 message.date,
-            );
+            )
         }
     }
 }
@@ -1131,7 +1348,7 @@ pub async fn build_log_item(
 pub async fn handle_message(
     db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
     api: &Api,
-    message: &Message,
+    message: &InterMessage,
     files: &Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let log_item =
@@ -1233,18 +1450,56 @@ pub async fn handle_message(
                 message.chat.id().to_string(),
             );
 
-        let chat_meta: ChatMeta =
-            (&message.chat).into();
-
         let chat_meta_value =
             serde_json::to_string(
-                &chat_meta,
+                &message.chat,
             )?;
 
         db.put(
             &chat_meta_key,
             &chat_meta_value,
         )?;
+    }
+
+    Ok(())
+}
+
+pub async fn handle_inter_message(
+    db: Arc<Mutex<DBWithThreadMode<MultiThreaded>>>,
+    api: &Api,
+    inter_msg: &InterMessage,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let files =
+        match inter_msg.kind {
+            MessageKind::Audio { .. }
+            | MessageKind::Voice { .. }
+            | MessageKind::Photo { .. }
+            | MessageKind::Document { .. }
+            | MessageKind::Sticker { .. }
+            | MessageKind::Video { .. }
+            | MessageKind::VideoNote { .. } =>
+                process_files(
+                    db.clone(),
+                    &api,
+                    &inter_msg,
+                ).await?,
+
+            _ => Vec::new(),
+        };
+
+    handle_message(
+        db.clone(),
+        &api,
+        &inter_msg,
+        &files,
+    ).await?;
+
+    if let Some(ref from) = inter_msg.from {
+        process_user(
+            db.clone(),
+            &api,
+            from,
+        ).await?;
     }
 
     Ok(())
@@ -1262,36 +1517,28 @@ async fn run(
 
         let update = update?;
 
-        if let UpdateKind::Message(message) = update.kind {
-            let files = match message.kind {
-                MessageKind::Audio { .. }
-                | MessageKind::Voice { .. }
-                | MessageKind::Photo { .. }
-                | MessageKind::Document { .. }
-                | MessageKind::Sticker { .. }
-                | MessageKind::Video { .. }
-                | MessageKind::VideoNote { .. } =>
-                    process_files(
-                        db.clone(),
-                        &api,
-                        &message,
-                    ).await?,
+        match update.kind {
+            UpdateKind::Message(ref message)
+            | UpdateKind::EditedMessage(ref message) => {
+                let inter_msg = message.into();
 
-                _ => Vec::new(),
-            };
+                handle_inter_message(
+                    db.clone(),
+                    &api,
+                    &inter_msg,
+                ).await?;
+            },
+            UpdateKind::ChannelPost(ref post)
+            | UpdateKind::EditedChannelPost(ref post) => {
+                let inter_msg = post.into();
 
-            handle_message(
-                db.clone(),
-                &api,
-                &message,
-                &files,
-            ).await?;
-
-            process_user(
-                db.clone(),
-                &api,
-                &message.from,
-            ).await?;
+                handle_inter_message(
+                    db.clone(),
+                    &api,
+                    &inter_msg,
+                ).await?;
+            }
+            _ => {},
         }
     }
 

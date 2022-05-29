@@ -247,6 +247,21 @@ pub fn resolve_chat_name(
                             ),
                         &group.id,
                     ),
+                ChatMeta::Channel(channel) =>
+                    if channel.username.is_some() {
+                        format!(
+                            "{} ({})",
+                            channel
+                                .username
+                                .unwrap(),
+                            &channel.id,
+                        )
+                    } else {
+                        format!(
+                            "{}",
+                            &channel.id,
+                        )
+                    },
                 ChatMeta::Unknown(raw_chat) =>
                     if raw_chat.username.is_some() {
                         format!(

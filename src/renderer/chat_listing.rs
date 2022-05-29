@@ -187,11 +187,15 @@ pub async fn chat_listing(
         match msg {
             LogItem::Message { ref text, ref user_id, .. } => {
                 let username =
-                    resolve_user(
-                        &dbi,
-                        &user_id,
-                        false,
-                    );
+                    if let Some(user_id) = user_id {
+                        resolve_user(
+                            &dbi,
+                            user_id,
+                            false,
+                        )
+                    } else {
+                        "Unknown".to_string()
+                    };
 
                 out.push(
                     format!(
@@ -220,6 +224,17 @@ pub async fn chat_listing(
                         .map(|file| vec!(file))
                         .unwrap_or(vec!());
 
+                let username =
+                    if let Some(user_id) = user_id {
+                        resolve_user(
+                            &dbi,
+                            user_id,
+                            false,
+                        )
+                    } else {
+                        "Unknown".to_string()
+                    };
+
                 out.push(
                     format!(
                         "<tr class=\"message\">\
@@ -230,7 +245,7 @@ pub async fn chat_listing(
                             <td class=\"content\">{}</td>\
                         </tr>",
                         day,
-                        user_id,
+                        &username,
                         format!(
                             "{} <br/> {}",
                             caption.as_ref().unwrap().clone(),
@@ -243,11 +258,15 @@ pub async fn chat_listing(
                 dbg!(&user_id, &membership_type);
 
                 let username =
-                    resolve_user(
-                        &dbi,
-                        &user_id,
-                        false,
-                    );
+                    if let Some(user_id) = user_id {
+                        resolve_user(
+                            &dbi,
+                            user_id,
+                            false,
+                        )
+                    } else {
+                        "Unknown".to_string()
+                    };
 
                 out.push(
                     format!(

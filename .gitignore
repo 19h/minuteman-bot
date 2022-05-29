@@ -3,3 +3,4 @@
 .idea
 fleet.toml
 .cargo
+db/

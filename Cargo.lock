@@ -1202,9 +1202,9 @@ dependencies = [
 
 [[package]]
 name = "pw-telegram-bot-fork"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c8123112b17eb4d0d205b0089ddebfb33102dd2df5cd4cf44985a4438e3563"
+checksum = "7cc0cd3b95f21d318e60ea64e35d5934a9f87f66dd343a6aaf15c9e6efac31d1"
 dependencies = [
  "bytes",
  "futures",
@@ -1219,9 +1219,9 @@ dependencies = [
 
 [[package]]
 name = "pw-telegram-bot-raw-fork"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567897bc0f5896807d0d8cd062a435323807f8f18a1756a39ef89ebe1426ac7d"
+checksum = "96cb359659a41c7bf01bf1c4e6d8d9968676cad0da38470a57b4366dff0276b9"
 dependencies = [
  "bytes",
  "serde",
